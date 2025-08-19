@@ -1,43 +1,51 @@
-# Division Service Dockerfile
-# Cloud Run optimizado para procesamiento de división de archivos
-
+# division-service - Standalone Cloud Run Service
 FROM python:3.11-slim
 
-# Instalar dependencias del sistema
+ENV PYTHONUNBUFFERED=True
+ENV PYTHONDONTWRITEBYTECODE=True
+ENV PYTHONPATH=/app
+
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
+    curl \
     gcc \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Configurar directorio de trabajo
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash app
+
 WORKDIR /app
 
-# Copiar requirements específicos del servicio
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar shared utils
+# Copy shared utilities (included in this repo)
 COPY shared_utils /app/shared_utils
 
-# Copiar código del servicio
-COPY services/division_service/src /app/services/division_service/src
+# Copy application source code
+COPY src /app/src
 
-# Crear usuario no-root para seguridad
-RUN useradd --create-home --shell /bin/bash app \
-    && chown -R app:app /app
+# Create temp directories with appropriate permissions
+RUN mkdir -p /tmp/shipments_processing && \
+    chown -R app:app /app /tmp/shipments_processing
+
+# Switch to non-root user
 USER app
 
-# Variables de entorno
-ENV PYTHONPATH="/app/services/division_service/src:/app/shared_utils/src"
-ENV PORT=8081
-ENV PYTHONUNBUFFERED=1
+# Set working directory to src
+WORKDIR /app/src
 
-# Exponer puerto
-EXPOSE 8081
+# Run application
+CMD exec python main.py
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8081/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
 
-# Comando de inicio
-CMD ["python", "/app/services/division_service/src/main.py"]
+# Labels for metadata
+LABEL service="division-service" \
+      version="2.0.0" \
+      description="division-service microservice - Shipments Processing Platform" \
+      maintainer="shipments-platform-team"
